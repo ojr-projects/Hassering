@@ -1,0 +1,14 @@
+[package]
+name = "tmap"
+version = "0.1.0"
+edition = "2021"
+description = "Genome tendency map: exact window-free sparse-pattern spectra (docs/GENOME_TENDENCY_MAP_REVIEW.md)"
+
+[dependencies]
+rayon = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

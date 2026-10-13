@@ -1,0 +1,692 @@
+<title>Tendency Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600;800&display=swap">
+<style>
+/* Layout: genome circle left, structure index + readout right; aligned-occurrence strip full width below. */
+:root {
+  --bg: #eef1f4; --surface: #ffffff; --ink: #18212b; --muted: #5d6b7a; --rule: #d3dae2;
+  --cds: #b9c3cd; --cds2: #8e9cab; --rna: #c46a2b; --reg: #6d5bd0; --accent: #1f6f8b; --sel: #18212b; --callout: #0a84ff;
+  --bA: #2b9348; --bC: #1d6fd1; --bG: #e09b12; --bT: #d1343f;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161c; --surface: #18202a; --ink: #e3e9ef; --muted: #91a0ae; --rule: #2a3542; --cds: #3a4756; --cds2: #566577;
+  --rna: #e08a4c; --reg: #9a8cf0; --accent: #5fb3cf; --sel: #f4f7fa; --callout: #3ea2ff;
+  --bA: #4cc26c; --bC: #4f97f0; --bG: #f2b33d; --bT: #ee5a64; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #18202a; --ink: #e3e9ef; --muted: #91a0ae; --rule: #2a3542; --cds: #3a4756; --cds2: #566577;
+  --rna: #e08a4c; --reg: #9a8cf0; --accent: #5fb3cf; --sel: #f4f7fa; --callout: #3ea2ff;
+  --bA: #4cc26c; --bC: #4f97f0; --bG: #f2b33d; --bT: #ee5a64; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; padding-inline: 16px; padding-block: 16px; box-sizing: border-box; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; margin-bottom: 12px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; }
+h1 em { font-style: italic; font-weight: 500; }
+.meta { color: var(--muted); font-size: 13px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+header .controls { margin-left: auto; }
+label { font-size: 12px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+select, button { font-family: var(--mono); font-size: 12px; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 4px; padding: 4px 8px; }
+button { cursor: pointer; }
+button:hover, select:hover { border-color: var(--accent); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+select { max-width: 300px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; }
+.seg button.on { background: var(--accent); color: var(--surface); }
+main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+#stage { position: relative; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; aspect-ratio: 1 / 1; max-width: 100%; overflow: hidden; }
+#cv { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#cv.drag, #al.drag { cursor: grabbing; }
+.zoomctl { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; align-items: center; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 3px; z-index: 3; }
+.zoomctl button { padding: 2px 8px; border: 0; }
+.zoomctl span { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 0 4px; white-space: nowrap; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-family: var(--mono); font-size: 11px; padding: 4px 6px; border-radius: 3px; white-space: pre; z-index: 4; max-width: 520px; }
+aside { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px; min-width: 0; }
+.panel h2 { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.phead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
+.phead h2 { margin: 0; }
+.phead .controls { margin-left: auto; }
+#structs { max-height: 360px; overflow: auto; }
+.srow { display: grid; grid-template-columns: 12px 44px minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+.srow:hover, .srow:focus-visible { background: var(--bg); outline: none; }
+.srow.on { background: var(--bg); box-shadow: inset 2px 0 0 var(--accent); }
+.shead { font-size: 11px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; cursor: default; }
+.shead:hover { background: none; }
+.sw { width: 10px; height: 10px; border-radius: 2px; }
+.nm { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); text-align: right; white-space: nowrap; }
+.bits { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; }
+.chip { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--rule); border-radius: 10px; padding: 1px 6px; color: var(--muted); white-space: nowrap; }
+.chip.acc { color: var(--accent); border-color: var(--accent); }
+table.kv { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.kv td, table.kv th { padding: 2px 10px 2px 0; text-align: left; vertical-align: top; }
+table.kv th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.famlist { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.famlist button.on { border-color: var(--accent); color: var(--accent); }
+canvas.mini { width: 100%; height: 86px; display: block; }
+canvas#logo { width: 100%; height: 132px; display: block; }
+.note { color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 72ch; }
+table.lib { border-collapse: collapse; font-size: 12px; width: 100%; }
+table.lib td, table.lib th { padding: 3px 8px 3px 0; text-align: left; vertical-align: top; border-top: 1px solid var(--rule); }
+table.lib th { color: var(--muted); font-weight: 500; border-top: 0; }
+table.lib td.c { font-family: var(--mono); white-space: nowrap; }
+table.lib td.s { font-variant-numeric: tabular-nums; }
+#alignBox { margin-top: 16px; }
+#alignWrap { position: relative; }
+#alignScroll { position: relative; max-height: 620px; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--rule); }
+#al { display: block; width: 100%; cursor: grab; touch-action: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+#copied { font-size: 12px; color: var(--accent); }
+textarea#rep { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+#loading { color: var(--muted); font-size: 13px; }
+</style>
+
+<header>
+  <h1 id="title">Tendency map</h1>
+  <span class="meta" id="sub"><span id="loading">Loading…</span></span>
+  <div class="controls">
+    <span id="spWrap" hidden><label for="species">Species</label> <select id="species"></select></span>
+    <label for="strain">Strain</label><select id="strain"></select>
+    <span class="seg" id="modeSeg" role="group" aria-label="Sequence domain"></span>
+    <span class="seg" id="levelSeg" role="group" aria-label="Family level">
+      <button data-l="broad" class="on">broad</button><button data-l="strict">strict</button></span>
+    <label for="nring">Rings</label>
+    <select id="nring"><option>12</option><option selected>20</option><option>32</option><option>48</option></select>
+  </div>
+</header>
+<main>
+  <div>
+    <div id="stage"><canvas id="cv"></canvas>
+      <div class="zoomctl" aria-label="Circle zoom"><button id="czIn" title="Zoom in">+</button><button id="czOut" title="Zoom out">−</button><button id="czReset" title="Reset zoom">reset</button><span id="czRead">1×</span></div>
+      <div id="tip" class="tip" hidden></div></div>
+    <p class="note">Wheel zooms the genome around the pointer (rings stay in place); drag rotates; the blue line marks the
+      far end of a zoomed window. Genes are arrows in their direction of transcription (RNA genes orange); the dashed ring is
+      the sequence backbone, where bases appear at high zoom. Each inner ring is one structure, ticked where it occurs in
+      this strain (outward = + strand); curves bundle its occurrences to one hub. Click a ring or a row to select.</p>
+  </div>
+  <aside>
+    <div class="panel">
+      <div class="phead"><h2>Structures</h2>
+        <div class="controls">
+          <label for="ethr">E ≤</label><select id="ethr"><option value="1e-2">1e-2</option><option value="1e-5" selected>1e-5</option><option value="1e-10">1e-10</option><option value="1e-20">1e-20</option><option value="Infinity">all</option></select>
+          <label for="sortBy">Sort</label><select id="sortBy"><option value="e" selected>E-value</option><option value="bits">bitscore</option><option value="len">length</option><option value="occ">occurrences</option></select>
+        </div></div>
+      <div id="structs"></div></div>
+    <div class="panel" id="fam">
+      <div class="phead"><h2>Selected</h2><div class="controls"><span id="copied" aria-live="polite"></span>
+        <button id="copyBtn" disabled>Copy report</button></div></div>
+      <div id="famBody" class="note">Select a structure.</div></div>
+  </aside>
+</main>
+<section class="panel" id="alignBox">
+  <div class="phead"><h2>Aligned occurrences</h2>
+    <div class="legend" id="legend"></div>
+    <div class="controls">
+      <span class="seg" id="scopeSeg" role="group" aria-label="Rows"><button data-s="strain" class="on">this strain</button><button data-s="all">all strains, bundled</button></span>
+      <label for="win">Window</label><select id="win"><option value="50">±50 bp</option><option value="100">±100 bp</option><option value="250" selected>±250 bp</option><option value="500">±500 bp</option><option value="1000">±1 kb</option><option value="3000">±3 kb</option></select>
+      <label for="rowh">Row</label><select id="rowh"><option value="10">10 px</option><option value="16" selected>16 px</option><option value="22">22 px</option><option value="30">30 px</option><option value="40">40 px</option></select>
+      <span class="zoomctl" style="position:static"><button id="azIn" title="Zoom in">+</button><button id="azOut" title="Zoom out">−</button><button id="azReset" title="Reset zoom">reset</button><span id="azRead">±250 bp</span></span>
+    </div></div>
+  <div id="alignWrap"><div id="alignScroll"><canvas id="al"></canvas></div><div id="tip2" class="tip" hidden></div></div>
+  <p class="note" id="alNote">Select a structure to align its occurrences.</p>
+</section>
+<textarea id="rep" aria-hidden="true" tabindex="-1"></textarea>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const PAL = ['#1f77b4','#d1495b','#2a9d8f','#e9a03b','#7b5ea7','#3d8bfd','#c0392b','#5c946e','#b56576','#4a7c8c','#8d6a9f','#c17c3a',
+             '#2e86ab','#a23b72','#6a994e','#f18f01','#5f6caf','#bc4749','#219ebc','#8f5e3b'];
+const cssCache = {}; const css = n => cssCache[n] ?? (cssCache[n] = getComputedStyle(document.documentElement).getPropertyValue(n).trim());
+const $ = id => document.getElementById(id);
+const embedded = $('data').textContent.trim();
+const SERVER = embedded === '__DATA__' || embedded === '';
+let ALL, LIB = [], MODES, MODE, D, structs = [], byId = {}, S = 0, SEL = null, FAM = null, NR = 20, LEVEL = 'broad', SCOPE = 'strain';
+let ETHR = 1e-5, SORT = 'e', SPECIES = null, ROWH = 16;
+const CZ = { z: 1, p0: 0, t0: -Math.PI / 2 };
+const AZ = { win: 250, c0: 0 };
+const seqCache = new Map();
+const fmtE = e => e === null || e === undefined ? 'n/a' : (e === 0 ? '0' : e < 0.001 || e > 9999 ? e.toExponential(1) : e.toPrecision(2));
+const lvMin = f => LEVEL === 'broad' ? f.broad_step : f.chain.length - 1;
+const famOK = f => (f.e ?? Infinity) <= ETHR;
+const label = f => f.cons_broad.length <= 12 ? f.cons_broad.replace(/\./g, 'n') : f.name;
+const nOcc = f => (f.true_counts ? f.true_counts[LEVEL] : D.strains.map((_, i) => (f.occ[i] || []).filter(o => o[2] >= lvMin(f)).length)).reduce((a, b) => a + b, 0);
+const RC = { A: 'T', C: 'G', G: 'C', T: 'A', N: 'N' };
+const GENE_TYPES = ['CDS', 'tRNA', 'rRNA', 'ncRNA', 'tmRNA'];
+
+// ---------------------------------------------------------------- loading
+async function boot() {
+  if (SERVER) {
+    const [sp, lib] = await Promise.all([fetch('/api/species').then(r => r.json()), fetch('/api/library').then(r => r.ok ? r.json() : []).catch(() => [])]);
+    LIB = lib; $('spWrap').hidden = false;
+    sp.forEach(x => { const o = document.createElement('option'); o.value = x.name; o.textContent = x.label; $('species').appendChild(o); });
+    $('species').onchange = e => loadSpecies(e.target.value);
+    await loadSpecies(sp[0].name);
+  } else { ALL = JSON.parse(embedded); LIB = ALL.library || []; start(); }
+}
+async function loadSpecies(name) {
+  $('sub').innerHTML = '<span id="loading">Loading…</span>';
+  SPECIES = name; ALL = await (await fetch('/api/view?species=' + encodeURIComponent(name))).json(); seqCache.clear(); start();
+}
+function start() {
+  MODES = Object.keys(ALL.views); S = 0;
+  $('title').innerHTML = `<em>${ALL.species}</em>`;
+  $('modeSeg').innerHTML = ''; MODES.forEach(m => { const b = document.createElement('button'); b.dataset.m = m;
+    b.textContent = m === 'nc' ? 'non-coding' : 'whole genome'; b.onclick = () => useMode(m); $('modeSeg').appendChild(b); });
+  $('strain').innerHTML = ''; ALL.strains.forEach((s, i) => { const o = document.createElement('option'); o.value = i;
+    o.textContent = `${s.strain || s.acc} · ${(s.length / 1e6).toFixed(2)} Mb${s.records.length > 1 ? ' · ' + s.records.length + ' rec' : ''}`; $('strain').appendChild(o); });
+  ALL.strains.forEach(st => { st.feat.sort((a, b) => a[0] - b[0]); st.genes = st.feat.filter(f => GENE_TYPES.includes(f[3])); });
+  resetCircle(false); useMode(MODES[0]);
+}
+function useMode(m) {
+  MODE = m; D = ALL.views[m]; D.strains = ALL.strains; D.famColor = {}; SEL = null; FAM = null;
+  rebuild(); [...$('modeSeg').children].forEach(b => b.classList.toggle('on', b.dataset.m === m));
+}
+function rebuild() {
+  const keep = D.structs.map(s => ({ ...s, fams: s.families.filter(i => famOK(D.families[i])) })).filter(s => s.fams.length);
+  keep.forEach(s => { const fs = s.fams.map(i => D.families[i]);
+    s.e = Math.min(...fs.map(f => f.e ?? Infinity)); s.bits = Math.max(...fs.map(f => f.bits ?? 0));
+    s.len = Math.max(...fs.map(f => f.length ?? f.span)); s.occ = Math.max(...fs.map(nOcc));
+    s.fams.sort((a, b) => (D.families[a].e ?? Infinity) - (D.families[b].e ?? Infinity)); });
+  const key = { e: s => s.e, bits: s => -s.bits, len: s => -s.len, occ: s => -s.occ }[SORT];
+  keep.sort((a, b) => key(a) - key(b) || a.e - b.e);
+  keep.forEach((s, k) => { s.color = PAL[k % PAL.length]; s.rank = k; s.fams.forEach(i => D.famColor[i] = s.color); });
+  structs = keep; byId = Object.fromEntries(structs.map(s => [s.id, s]));   // (each rebuild makes fresh objects, so s._rel resets)
+  if (SEL !== null && !byId[SEL]) { SEL = null; FAM = null; }
+  buildIndex();
+  const nf = structs.reduce((a, s) => a + s.fams.length, 0);
+  $('sub').textContent = `${D.strains.length} strains · ${nf} of ${D.families.length} families at E ≤ ${ETHR === Infinity ? '∞' : ETHR.toExponential(0)} · ${structs.length} structures · ${MODE === 'nc' ? 'non-coding, non-gene domain' : 'whole genome'} · annotation ${D.annotation.join('/')}`;
+  draw(); renderList(); renderFam(); drawAlign();
+}
+function buildIndex() {
+  D.idx = D.strains.map((_, si) => { const a = [];
+    structs.forEach(s => s.fams.forEach(i => { const f = D.families[i];
+      for (const [p, st, lv] of (f.occ[si] || [])) if (lv >= lvMin(f)) { const lo = st > 0 ? p : p - f.span + 1; a.push([lo, lo + f.span, st, f.id]); } }));
+    return a.sort((x, y) => x[0] - y[0]); });
+}
+function occOf(sid, si) {
+  const s = byId[sid], seen = new Set(), out = [];
+  for (const i of s.fams) { const f = D.families[i];
+    for (const [p, st, lv] of (f.occ[si] || [])) { if (lv < lvMin(f)) continue;
+      const k = Math.round(p / 20) + ':' + st; if (!seen.has(k)) { seen.add(k); out.push([p, st, i]); } } }
+  return out;
+}
+
+$('strain').onchange = e => { S = +e.target.value; resetCircle(false); draw(); renderList(); renderFam(); drawAlign(); };
+$('nring').onchange = e => { NR = +e.target.value; draw(); };
+$('ethr').onchange = e => { ETHR = +e.target.value; rebuild(); };
+$('sortBy').onchange = e => { SORT = e.target.value; rebuild(); };
+$('rowh').onchange = e => { ROWH = +e.target.value; drawAlign(); };
+[...$('levelSeg').children].forEach(b => b.onclick = () => { LEVEL = b.dataset.l;
+  [...$('levelSeg').children].forEach(x => x.classList.toggle('on', x === b)); rebuild(); });
+[...$('scopeSeg').children].forEach(b => b.onclick = () => { SCOPE = b.dataset.s;
+  [...$('scopeSeg').children].forEach(x => x.classList.toggle('on', x === b)); drawAlign(); });
+$('win').onchange = e => { AZ.win = +e.target.value; AZ.c0 = 0; drawAlign(); };
+$('legend').innerHTML = `<span style="--c:var(--cds2)">gene, with motif</span><span style="--c:var(--cds)">gene, against motif</span><span style="--c:var(--rna)">RNA gene</span><span style="--c:var(--reg)">regulatory / CRISPR / oriC</span><span style="--c:var(--sel)">selected occurrence</span><span style="--c:#999">other structures (own colour)</span>`;
+
+// ---------------------------------------------------------------- sequence on demand
+let fetching = false;
+async function fetchSeqs(need, redraw) {
+  if (fetching || !SERVER) return; fetching = true;
+  need.forEach(([k]) => seqCache.set(k, null));
+  try { const res = await fetch('/api/seqs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(need.map(([, si, a, b]) => [SPECIES, si, a, b])) });
+    const seqs = await res.json(); need.forEach(([k], i) => seqCache.set(k, seqs[i] || '')); }
+  catch (e) { need.forEach(([k]) => seqCache.delete(k)); }
+  fetching = false; redraw();
+}
+
+// ---------------------------------------------------------------- circle with locus-anchored zoom
+const cv = $('cv'), ctx = cv.getContext('2d');
+let geo = null;
+const wrapD = (d, L) => ((d % L) + L * 1.5) % L - L / 2;
+function ang(p) { const L = D.strains[S].length; return CZ.t0 + wrapD(p - CZ.p0, L) / L * 2 * Math.PI * CZ.z; }
+function visible(p) { const L = D.strains[S].length; return Math.abs(wrapD(p - CZ.p0, L)) * CZ.z <= L / 2; }
+function locusAt(theta) { const L = D.strains[S].length; let dt = theta - CZ.t0; dt = Math.atan2(Math.sin(dt), Math.cos(dt));
+  return ((CZ.p0 + dt / (2 * Math.PI * CZ.z) * L) % L + L) % L; }
+function resetCircle(redraw = true) { CZ.z = 1; CZ.p0 = 0; CZ.t0 = -Math.PI / 2; if (redraw) draw(); }
+function niceStep(span, n = 8) { const raw = span / n, p = Math.pow(10, Math.floor(Math.log10(raw))); return [1, 2, 5, 10].map(m => m * p).find(v => v >= raw); }
+function fmtBp(p) { return p >= 1e6 ? (p / 1e6).toFixed(p % 1e6 ? 2 : 1) + 'M' : p >= 1e3 ? (p / 1e3).toFixed(p % 1e3 ? 1 : 0) + 'k' : Math.round(p) + ''; }
+function clipAng(a, b) {        // visible angular extent of genome interval [a, b), or null
+  const L = D.strains[S].length, half = L / 2 / CZ.z; let da = wrapD(a - CZ.p0, L), db = da + (b - a);
+  if (db < -half || da > half) return null; const ca = Math.max(da, -half), cb = Math.min(db, half);
+  const k = 2 * Math.PI * CZ.z / L; return { ta: CZ.t0 + ca * k, tb: CZ.t0 + cb * k, clipA: ca > da, clipB: cb < db };
+}
+function arcSeg(r, a, b) { const c = clipAng(a, b); if (!c) return; ctx.beginPath(); ctx.arc(geo.cx, geo.cy, r, c.ta, Math.max(c.tb, c.ta + 0.002)); ctx.stroke(); }
+function geneArrow(r0, r1, a, b, strand) {    // annular sector with an arrow head in the direction of transcription
+  const c = clipAng(a, b); if (!c) return; const { cx, cy } = geo, rm = (r0 + r1) / 2;
+  let { ta, tb } = c; if (tb - ta < 0.0005) tb = ta + 0.0005;
+  const head = Math.min(7 / rm, (tb - ta) * 0.6);
+  ctx.beginPath();
+  if (strand > 0 && !c.clipB) {
+    ctx.arc(cx, cy, r1, ta, tb - head); ctx.lineTo(cx + rm * Math.cos(tb), cy + rm * Math.sin(tb));
+    ctx.lineTo(cx + r0 * Math.cos(tb - head), cy + r0 * Math.sin(tb - head)); ctx.arc(cx, cy, r0, tb - head, ta, true);
+  } else if (strand < 0 && !c.clipA) {
+    ctx.moveTo(cx + rm * Math.cos(ta), cy + rm * Math.sin(ta)); ctx.lineTo(cx + r1 * Math.cos(ta + head), cy + r1 * Math.sin(ta + head));
+    ctx.arc(cx, cy, r1, ta + head, tb); ctx.lineTo(cx + r0 * Math.cos(tb), cy + r0 * Math.sin(tb)); ctx.arc(cx, cy, r0, tb, ta + head, true);
+  } else { ctx.arc(cx, cy, r1, ta, tb); ctx.arc(cx, cy, r0, tb, ta, true); }
+  ctx.closePath(); ctx.fill();
+}
+function pxPerBase() { return geo ? geo.rB * 2 * Math.PI * CZ.z / D.strains[S].length : 0; }
+function draw() {
+  if (!D) return;
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = r.width * dpr; cv.height = r.height * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = r.width, cx = W / 2, cy = W / 2, R = W * 0.37, band = Math.max(8, W * 0.022);
+  const st = D.strains[S], L = st.length;
+  const rB = R - band * 0.95, r0 = R - band * 1.9;
+  const shown = structs.slice(0, NR), rw = (R * 0.5) / Math.max(NR, 1), hubR = r0 - NR * rw - rw;
+  geo = { cx, cy, R, r0, rw, L, shown, hubR, band, rB };
+  ctx.clearRect(0, 0, W, W);
+  const span = L / CZ.z, ppb = pxPerBase(), showLetters = SERVER && ppb >= 7;
+  // genes as arrows
+  const visGenes = st.genes.filter(f => clipAng(f[0], f[1]));
+  for (const [a, b, s, t] of visGenes) { ctx.fillStyle = t === 'CDS' ? css('--cds2') : css('--rna');
+    s > 0 ? geneArrow(R + 1, R + band * 0.55, a, b, 1) : geneArrow(R - band * 0.55, R - 1, a, b, -1); }
+  // record boundaries and oriC
+  ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1;
+  for (const rc of st.records) if (visible(rc.offset)) { const t = ang(rc.offset); ctx.beginPath();
+    ctx.moveTo(cx + (R + band * 0.7) * Math.cos(t), cy + (R + band * 0.7) * Math.sin(t)); ctx.lineTo(cx + (R + band * 1.2) * Math.cos(t), cy + (R + band * 1.2) * Math.sin(t)); ctx.stroke(); }
+  const ori = st.feat.find(f => f[3] === 'oriC');
+  if (ori && visible(ori[0])) { const t = ang(ori[0]); ctx.fillStyle = css('--reg'); ctx.beginPath(); ctx.arc(cx + (R + band * 0.95) * Math.cos(t), cy + (R + band * 0.95) * Math.sin(t), 3.5, 0, Math.PI * 2); ctx.fill(); }
+  // scale ticks (dense)
+  const step = niceStep(span, 24), lo = CZ.p0 - span / 2;
+  ctx.fillStyle = css('--muted'); ctx.font = `9px ${css('--mono')}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.strokeStyle = css('--rule'); ctx.lineWidth = 1;
+  let ti = 0;
+  for (let p = Math.ceil(lo / step) * step; p <= CZ.p0 + span / 2; p += step, ti++) { const q = ((p % L) + L) % L, t = ang(q), major = Math.round(p / step) % 3 === 0;
+    ctx.beginPath(); ctx.moveTo(cx + (R + band * 0.65) * Math.cos(t), cy + (R + band * 0.65) * Math.sin(t));
+    ctx.lineTo(cx + (R + band * (major ? 1.25 : 0.95)) * Math.cos(t), cy + (R + band * (major ? 1.25 : 0.95)) * Math.sin(t)); ctx.stroke();
+    ctx.fillText(fmtBp(q), cx + (R + band * 1.75) * Math.cos(t), cy + (R + band * 1.75) * Math.sin(t)); }
+  // sequence backbone (dashed) and letters at high zoom
+  ctx.strokeStyle = css('--ink'); ctx.lineWidth = 0.8; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(cx, cy, rB, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  let winSeq = null, wa = 0;
+  if (showLetters) {
+    wa = Math.floor(CZ.p0 - span / 2) - 2; const wb = Math.ceil(CZ.p0 + span / 2) + 2;
+    const key = `C|${SPECIES}|${S}|${wa}|${wb}`; winSeq = seqCache.get(key);
+    if (winSeq === undefined) { fetchSeqs([[key, S, Math.max(0, wa), wb]], draw); winSeq = null; }
+    else if (winSeq && wa < 0) winSeq = 'N'.repeat(-wa) + winSeq;
+  }
+  const baseAt = p => winSeq ? (winSeq[p - wa] || '') : '';
+  const drawLetters = (r, a, b, color) => {      // bases a..b-1 tangentially at radius r
+    ctx.font = `600 ${Math.min(14, ppb * 0.85)}px ${css('--mono')}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let p = a; p < b; p++) { const ch = baseAt(p); if (!ch || !visible(p)) continue; const t = ang(p + 0.5);
+      ctx.save(); ctx.translate(cx + r * Math.cos(t), cy + r * Math.sin(t)); ctx.rotate(t + Math.PI / 2);
+      ctx.fillStyle = color || css('--b' + ch) || css('--muted'); ctx.fillText(ch, 0, 0); ctx.restore(); } };
+  if (winSeq) {
+    drawLetters(rB, Math.floor(CZ.p0 - span / 2), Math.ceil(CZ.p0 + span / 2));
+    for (const [a, b, s, fid] of D.idx[S]) { const c = clipAng(a, b); if (!c) continue;     // motif boxes on the backbone
+      ctx.strokeStyle = D.famColor[fid]; ctx.lineWidth = 1.5; const h = Math.min(9, ppb * 0.7);
+      ctx.beginPath(); ctx.arc(cx, cy, rB + h, c.ta, c.tb); ctx.arc(cx, cy, rB - h, c.tb, c.ta, true); ctx.closePath(); ctx.stroke(); }
+  }
+  // far-end break of a zoomed window: cut to the centre
+  if (CZ.z > 1) { const t = CZ.t0 + Math.PI; ctx.strokeStyle = css('--callout'); ctx.lineWidth = 3; ctx.beginPath();
+    ctx.moveTo(cx, cy); ctx.lineTo(cx + (R + band * 2.2) * Math.cos(t), cy + (R + band * 2.2) * Math.sin(t)); ctx.stroke();
+    ctx.fillStyle = css('--callout'); ctx.font = `10px ${css('--mono')}`; ctx.textAlign = 'center';
+    ctx.fillText(`${fmtBp(((CZ.p0 + span / 2) % L + L) % L)} | ${fmtBp(((CZ.p0 - span / 2) % L + L) % L)}`, cx + (R + band * 2.7) * Math.cos(t), cy + (R + band * 2.7) * Math.sin(t)); }
+  // structure rings
+  const spokes = visGenes.length <= 100, bars = ppb >= 0.25;
+  shown.forEach((s, k) => {
+    const rr = r0 - k * rw, occ = occOf(s.id, S), dim = SEL !== null && SEL !== s.id;
+    ctx.strokeStyle = css('--rule'); ctx.lineWidth = 0.5; ctx.beginPath(); ctx.arc(cx, cy, rr - rw / 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = dim ? 0.18 : 1;
+    for (const [p, strand, fi] of occ) {
+      if ((FAM !== null && SEL === s.id && fi !== FAM) || !visible(p)) continue;
+      const f = D.families[fi], a0 = strand > 0 ? p : p - f.span + 1, t = ang(p);
+      const ra = strand > 0 ? rr : rr - rw * 0.42, rb = strand > 0 ? rr - rw * 0.42 : rr - rw * 0.84;
+      ctx.strokeStyle = s.color;
+      if (spokes) { ctx.lineWidth = 0.7; ctx.globalAlpha = dim ? 0.12 : 0.55; const tm = ang(a0 + f.span / 2);
+        ctx.beginPath(); ctx.moveTo(cx + rr * Math.cos(tm), cy + rr * Math.sin(tm)); ctx.lineTo(cx + (rB - 2) * Math.cos(tm), cy + (rB - 2) * Math.sin(tm)); ctx.stroke(); ctx.globalAlpha = dim ? 0.18 : 1; }
+      if (winSeq) { drawLetters(rr - rw * 0.42, a0, a0 + f.span, s.color); continue; }
+      if (bars && clipAng(a0, a0 + f.span)) { ctx.lineWidth = rw * 0.38; arcSeg((ra + rb) / 2, a0, a0 + f.span); continue; }
+      ctx.lineWidth = SEL === s.id ? 2 : 1.2; ctx.beginPath(); ctx.moveTo(cx + ra * Math.cos(t), cy + ra * Math.sin(t)); ctx.lineTo(cx + rb * Math.cos(t), cy + rb * Math.sin(t)); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  });
+  // bundles to hubs
+  shown.forEach((s, k) => {
+    const occ = occOf(s.id, S).filter(o => visible(o[0])); if (!occ.length) return;
+    const sx = occ.reduce((a, o) => a + Math.cos(ang(o[0])), 0), sy = occ.reduce((a, o) => a + Math.sin(ang(o[0])), 0);
+    const hr = hubR * (0.25 + 0.75 * Math.min(1, Math.hypot(sx, sy) / occ.length * 4));
+    const ht = Math.atan2(sy, sx), hx = cx + hr * Math.cos(ht), hy = cy + hr * Math.sin(ht), on = SEL === s.id;
+    ctx.strokeStyle = s.color; ctx.globalAlpha = SEL === null ? 0.22 : (on ? 0.75 : 0.04); ctx.lineWidth = on ? 1.2 : 0.8;
+    const rr = r0 - k * rw - rw;
+    for (const [p, strand, fi] of occ) {
+      if (FAM !== null && on && fi !== FAM) continue;
+      const t = ang(p), x0 = cx + rr * Math.cos(t), y0 = cy + rr * Math.sin(t);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + hx) / 2 * 0.6 + cx * 0.4, (y0 + hy) / 2 * 0.6 + cy * 0.4, hx, hy); ctx.stroke(); }
+    ctx.globalAlpha = 1; ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(hx, hy, on ? 4 : 2.5, 0, Math.PI * 2); ctx.fill();
+  });
+  // gene callouts at close zoom: bright blue leader + unfilled box with the name (and product when very close)
+  if (visGenes.length <= 60) {
+    const rLab = R + band * 2.6, placed = [];
+    ctx.font = `11px ${css('--mono')}`; ctx.textBaseline = 'middle';
+    for (const g of visGenes) { const nm = (g[4] && g[4] !== g[6] ? g[4] : '') || (g[3] !== 'CDS' ? g[3] : '') || g[6]; if (!nm) continue;
+      const c = clipAng(g[0], g[1]); const tm = (c.ta + c.tb) / 2;
+      if (placed.some(t => Math.abs(Math.atan2(Math.sin(t - tm), Math.cos(t - tm))) * rLab < 15)) continue; placed.push(tm);
+      const x0 = cx + (R + band * 0.6) * Math.cos(tm), y0 = cy + (R + band * 0.6) * Math.sin(tm), x1 = cx + rLab * Math.cos(tm), y1 = cy + rLab * Math.sin(tm);
+      const prod = visGenes.length <= 15 && g[5] ? g[5].slice(0, 42) : '';
+      const w = Math.max(ctx.measureText(nm).width, prod ? ctx.measureText(prod).width * 0.85 : 0) + 8, h = prod ? 28 : 16;
+      const right = Math.cos(tm) >= 0, bx = Math.min(Math.max(right ? x1 : x1 - w, 2), W - w - 2), by = Math.min(Math.max(y1 - h / 2, 2), W - h - 2);
+      ctx.strokeStyle = css('--callout'); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(right ? bx : bx + w, by + h / 2); ctx.stroke();
+      ctx.strokeRect(bx, by, w, h); ctx.fillStyle = css('--callout'); ctx.textAlign = 'left'; ctx.font = `11px ${css('--mono')}`;
+      ctx.fillText(nm, bx + 4, by + (prod ? 8 : h / 2)); if (prod) { ctx.font = `9px ${css('--sans')}`; ctx.fillText(prod, bx + 4, by + 20); }
+    }
+  }
+  ctx.fillStyle = css('--muted'); ctx.font = `11px ${css('--sans')}`; ctx.textAlign = 'center';
+  ctx.fillText(st.strain || st.acc, cx, cy - 8); ctx.fillText(CZ.z > 1 ? `${fmtBp(((CZ.p0 - span / 2) % L + L) % L)}–${fmtBp(((CZ.p0 + span / 2) % L + L) % L)}` : (L / 1e6).toFixed(3) + ' Mb', cx, cy + 8);
+  $('czRead').textContent = `${CZ.z < 10 ? CZ.z.toFixed(1) : Math.round(CZ.z).toLocaleString()}× · ${fmtBp(span)}${showLetters ? '' : (SERVER && ppb >= 2 ? ' · zoom for bases' : '')}`;
+}
+function polar(ev) { const r = cv.getBoundingClientRect(), x = ev.clientX - r.left - geo.cx, y = ev.clientY - r.top - geo.cy; return { d: Math.hypot(x, y), t: Math.atan2(y, x) }; }
+function zoomCircleAt(theta, factor) {
+  const L = D.strains[S].length, p = locusAt(theta);
+  CZ.z = Math.min(Math.max(CZ.z * factor, 1), L / 90);
+  if (CZ.z === 1) { CZ.p0 = 0; CZ.t0 = -Math.PI / 2; } else { CZ.p0 = p; CZ.t0 = theta; }
+  draw();
+}
+cv.addEventListener('wheel', ev => { if (!geo) return; ev.preventDefault(); zoomCircleAt(polar(ev).t, Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
+$('czIn').onclick = () => zoomCircleAt(CZ.t0, 1.6); $('czOut').onclick = () => zoomCircleAt(CZ.t0, 1 / 1.6); $('czReset').onclick = () => resetCircle();
+let drag = null;
+cv.addEventListener('pointerdown', ev => { drag = { t: polar(ev).t, t0: CZ.t0, moved: false }; cv.setPointerCapture(ev.pointerId); });
+cv.addEventListener('pointermove', ev => {
+  if (drag) { const t = polar(ev).t, dt = Math.atan2(Math.sin(t - drag.t), Math.cos(t - drag.t)); if (Math.abs(dt) > 0.01) drag.moved = true;
+    if (drag.moved) { cv.classList.add('drag'); CZ.t0 = drag.t0 + dt; draw(); return; } }
+  if (!geo) return; const { d, t } = polar(ev), tip = $('tip'), pos = Math.round(locusAt(t)), k = Math.floor((geo.r0 - d) / geo.rw), st = D.strains[S];
+  let txt = `${pos.toLocaleString()} bp`;
+  if (d > geo.R - geo.band * 0.7 && d < geo.R + geo.band * 0.7) { const g = st.genes.find(f => f[0] <= pos && f[1] >= pos && ((d > geo.R) === (f[2] > 0)));
+    if (g) txt += `\n${g[3]} ${g[4] || ''} ${g[6] && g[6] !== g[4] ? '(' + g[6] + ')' : ''}  ${g[2] > 0 ? '→' : '←'}  ${g[0].toLocaleString()}–${g[1].toLocaleString()}${g[5] ? '\n' + g[5] : ''}`; }
+  else if (d <= geo.r0 && k >= 0 && k < geo.shown.length) txt += ` · ${label(D.families[geo.shown[k].fams[0]])}`;
+  tip.textContent = txt; tip.hidden = false; const r = cv.getBoundingClientRect();
+  tip.style.left = Math.min(ev.clientX - r.left + 12, r.width - 260) + 'px'; tip.style.top = (ev.clientY - r.top + 12) + 'px'; });
+cv.addEventListener('pointerup', ev => { const was = drag && drag.moved; drag = null; cv.classList.remove('drag');
+  if (!was && geo) { const { d } = polar(ev), k = Math.floor((geo.r0 - d) / geo.rw); if (d <= geo.r0 && k >= 0 && k < geo.shown.length) select(geo.shown[k].id); } });
+cv.addEventListener('pointerleave', () => { $('tip').hidden = true; });
+
+// ---------------------------------------------------------------- list and selection
+function select(id) { SEL = SEL === id ? null : id; FAM = null; draw(); renderList(); renderFam(); drawAlign(); }
+function renderList() {
+  const box = $('structs'); box.innerHTML = `<div class="srow shead"><span></span><span class="bits">bits</span><span>motif</span><span class="num">E</span><span class="num">here</span><span>strains</span></div>`;
+  if (!structs.length) { box.insertAdjacentHTML('beforeend', '<p class="note">No structure passes this E-value threshold.</p>'); return; }
+  for (const s of structs) {
+    const fs = s.fams.map(i => D.families[i]), f = fs[0];
+    const nS = Math.max(...fs.map(x => (x.true_counts ? x.true_counts[LEVEL] : []).filter(v => v > 0).length || Object.keys(x.occ).length));
+    const row = document.createElement('div'); row.className = 'srow' + (SEL === s.id ? ' on' : ''); row.tabIndex = 0;
+    row.innerHTML = `<span class="sw" style="background:${s.color}"></span><span class="bits">${s.bits.toFixed(1)}</span>
+      <span class="nm" title="${f.name}   degenerate ${f.degenerate}   composite ${f.cons_broad}">${label(f)}${fs.length > 1 ? ` <span style="color:var(--muted)">+${fs.length - 1}</span>` : ''}</span>
+      <span class="num">${fmtE(s.e)}</span><span class="num">${occOf(s.id, S).length}</span><span class="chip ${nS < D.strains.length ? 'acc' : ''}">${nS}/${D.strains.length}</span>`;
+    row.onclick = () => select(s.id); row.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(s.id); } };
+    box.appendChild(row); }
+}
+function renderFam() {
+  const body = $('famBody'); $('copyBtn').disabled = SEL === null; $('copied').textContent = '';
+  if (SEL === null || !byId[SEL]) { body.className = 'note'; body.textContent = 'Select a structure.'; return; }
+  body.className = ''; const s = byId[SEL], fid = FAM === null ? s.fams[0] : FAM, f = D.families[fid];
+  const counts = f.true_counts ? f.true_counts[LEVEL] : D.strains.map((_, i) => (f.occ[i] || []).filter(o => o[2] >= lvMin(f)).length);
+  const mb = f.mapback.broad, matches = libMatches(f);
+  body.innerHTML = `
+    <div class="famlist">${s.fams.map(i => `<button class="${i === fid ? 'on' : ''}" data-f="${i}">${label(D.families[i])}</button>`).join('')}</div>
+    <canvas id="logo" aria-label="Sequence logo of the aligned occurrences"></canvas>
+    <table class="kv">
+      <tr><th>seed</th><td style="font-family:var(--mono)">${f.name}${f.inverted ? ' (inverted pair)' : ''}</td></tr>
+      <tr><th>composite</th><td style="font-family:var(--mono)">${(LEVEL === 'broad' ? f.cons_broad : f.cons_strict)} <span style="color:var(--muted)">(${f.length} bp, ${f.bits} bits)</span></td></tr>
+      <tr><th>degenerate form</th><td style="font-family:var(--mono)">${f.degenerate} · z ${f.z_ball} · E ${fmtE(f.e_ball)}</td></tr>
+      <tr><th>spacing peak</th><td>${f.count.toLocaleString()} vs expected ${f.baseline} · z ${f.z} · E ${fmtE(f.e)}</td></tr>
+      <tr><th>occurrences</th><td>seed ${f.n_seed.toLocaleString()} · ${LEVEL} ${counts.reduce((a, b) => a + b, 0).toLocaleString()} in ${counts.filter(x => x).length}/${D.strains.length} strains${f.bundles ? ` · ${f.bundles.filter(b => b.strains >= 2).length} cross-strain bundles` : ''}</td></tr>
+      ${f.sampled > 1 ? `<tr><th>drawing</th><td>1 in ${f.sampled} occurrences drawn (dense family); counts are exact</td></tr>` : ''}
+      <tr><th>whole genomes</th><td>${mb.total.toLocaleString()} hits · ${mb.noncoding.toLocaleString()} outside CDS · ${mb.coding.toLocaleString()} in CDS</td></tr></table>
+    <h2 style="margin-top:12px">Occurrences per Mb, by strain</h2>
+    <canvas class="mini" id="per" aria-label="Occurrences per Mb of genome, by strain, sorted"></canvas>
+    <h2 style="margin-top:12px">Nearest known motifs</h2>
+    ${matches.length ? `<table class="lib"><tr><th>z</th><th>motif</th><th>consensus</th><th>source</th></tr>${matches.map(m =>
+      `<tr><td class="s">${m.z.toFixed(1)}<br><span style="color:var(--muted)">${m.score.toFixed(2)}</span></td><td>${m.e.name}<br><span style="color:var(--muted)">${m.e.organism}</span></td><td class="c">${m.e.consensus}<br><span style="color:var(--muted)">${m.strand > 0 ? '+' : '−'} strand, offset ${m.off}</span></td><td>${m.e.source}</td></tr>`).join('')}</table>`
+      : `<p class="note">${LIB.length ? `No library motif matches convincingly (z ≥ 3 against column-shuffled versions of this motif; ${LIB.length} motifs searched).` : 'Motif library not loaded.'}</p>`}`;
+  body.querySelectorAll('.famlist button').forEach(b => b.onclick = () => { FAM = +b.dataset.f; draw(); renderFam(); drawAlign(); });
+  drawLogo($('logo'), f); perStrain($('per'), counts, s.color);
+}
+function perStrain(c, counts, col) {      // occurrences per Mb, sorted high to low, current strain emphasised
+  const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = r.width * dpr; c.height = r.height * dpr;
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); const W = r.width, H = r.height, bot = 30;
+  const v = counts.map((x, i) => ({ i, y: x / (D.strains[i].length / 1e6) })).sort((a, b) => b.y - a.y), m = Math.max(1e-9, ...v.map(x => x.y));
+  const bw = W / v.length;
+  g.fillStyle = css('--muted'); g.font = `10px ${css('--mono')}`; g.textBaseline = 'top'; g.textAlign = 'left'; g.fillText(`max ${m.toFixed(1)} per Mb`, 0, 0);
+  v.forEach((x, k) => { const h = (x.y / m) * (H - bot - 14); g.fillStyle = col; g.globalAlpha = x.i === S ? 1 : 0.5;
+    g.fillRect(k * bw + 1, H - bot - h, Math.max(1, bw - 2), h); g.globalAlpha = 1;
+    g.save(); g.translate(k * bw + bw / 2, H - bot + 3); g.rotate(-Math.PI / 4); g.fillStyle = x.i === S ? css('--ink') : css('--muted');
+    g.font = `9px ${css('--mono')}`; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillText((D.strains[x.i].strain || D.strains[x.i].acc).slice(0, 9), 0, 0); g.restore(); });
+}
+function drawLogo(c, f) {
+  const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; c.width = r.width * dpr; c.height = r.height * dpr;
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = r.width, H = r.height, ax = 30, top = 6, bot = 20, plotH = H - top - bot, cols = f.logo || [], n = cols.length;
+  if (!n) return; const bg = f.bg || [.25, .25, .25, .25], maxBits = Math.max(2, ...bg.map(q => -Math.log2(q)));
+  const cw = (W - ax) / n, y = b => top + plotH - b / maxBits * plotH;
+  g.strokeStyle = css('--rule'); g.fillStyle = css('--muted'); g.font = `10px ${css('--mono')}`; g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (let b = 0; b <= Math.floor(maxBits); b++) { g.beginPath(); g.moveTo(ax, y(b)); g.lineTo(W, y(b)); g.stroke(); g.fillText(b, ax - 6, y(b)); }
+  g.save(); g.translate(9, top + plotH / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillText('bits', 0, 0); g.restore();
+  const cLo = -f.logo_start + f.lo_broad, cHi = cLo + f.length;
+  g.fillStyle = css('--bg'); g.fillRect(ax, top, cLo * cw, plotH); g.fillRect(ax + cHi * cw, top, (n - cHi) * cw, plotH);
+  const colr = { A: css('--bA'), C: css('--bC'), G: css('--bG'), T: css('--bT') };
+  cols.forEach((p, j) => {
+    const ic = p.reduce((a, v, k) => a + (v > 0 ? v * Math.log2(v / bg[k]) : 0), 0);
+    const order = [0, 1, 2, 3].sort((a, b) => p[a] - p[b]); let base = top + plotH;
+    for (const k of order) { const h = p[k] * Math.max(ic, 0) / maxBits * plotH; if (h < 0.4) continue;
+      const ch = 'ACGT'[k]; g.save(); g.translate(ax + j * cw, base - h); g.scale(cw / 60, h / 72);
+      g.fillStyle = colr[ch]; g.font = `800 100px ${css('--mono')}`; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(ch, 0, 72); g.restore(); base -= h; }
+    g.fillStyle = css('--muted'); g.font = `9px ${css('--mono')}`; g.textAlign = 'center'; g.textBaseline = 'top';
+    const off = f.logo_start + j; if (n < 60 || off % 5 === 0) g.fillText(off, ax + j * cw + cw / 2, H - bot + 4);
+  });
+}
+
+// ---------------------------------------------------------------- known-motif library: nearest matches
+function colSim(p, q) { let d = 0; for (let k = 0; k < 4; k++) d += Math.abs(p[k] - q[k]); return 1 - d / 2; }
+function colIC(p) { return p.reduce((a, v) => a + (v > 0 ? v * Math.log2(4 * v) : 0), 0); }
+function bestAlign(Q, QI, M, minf) {     // best information-weighted column similarity over offsets (>= 5 informative columns)
+  let best = null;
+  for (let off = -(M.length - 1); off < Q.length; off++) {
+    let s = 0, w = 0, n = 0;
+    for (let j = 0; j < M.length; j++) { const i = off + j; if (i < 0 || i >= Q.length) continue;
+      const wt = Math.max(QI[i], minf[j]); if (wt < 0.3) continue; s += wt * colSim(Q[i], M[j]); w += wt; n++; }
+    if (n >= 5) { const sc = s / w * Math.min(1, n / 8); if (!best || sc > best.score) best = { score: sc, off, n }; } }
+  return best;
+}
+function libMatches(f) {      // nearest known motifs, calibrated: z of the real score against 12 column-shuffled queries
+  if (!LIB.length || !f.logo) return [];
+  if (f._lib) return f._lib;
+  const q = f.logo.slice(-f.logo_start + f.lo_broad, -f.logo_start + f.lo_broad + f.length);
+  const rc = Q => Q.slice().reverse().map(p => [p[3], p[2], p[1], p[0]]);
+  let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const shuffles = Array.from({ length: 12 }, () => { const a = q.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; });
+  const both = Q => [[Q, Q.map(colIC), 1], [rc(Q), rc(Q).map(colIC), -1]];
+  const real = both(q), nulls = shuffles.map(both), out = [];
+  for (const e of LIB) { const M = e.matrix, minf = e._inf || (e._inf = M.map(colIC));
+    let best = null;
+    for (const [Q, QI, strand] of real) { const b = bestAlign(Q, QI, M, minf); if (b && (!best || b.score > best.score)) best = { ...b, strand }; }
+    if (!best) continue;
+    const ns = nulls.map(pair => Math.max(...pair.map(([Q, QI]) => (bestAlign(Q, QI, M, minf) || { score: 0 }).score)));
+    const mu = ns.reduce((a, b) => a + b, 0) / ns.length, sd = Math.sqrt(ns.reduce((a, b) => a + (b - mu) ** 2, 0) / (ns.length - 1)) || 0.02;
+    const z = (best.score - mu) / Math.max(sd, 0.02);
+    if (z >= 3) out.push({ e, score: best.score, z, off: best.off, strand: best.strand, n: best.n }); }
+  return (f._lib = out.sort((a, b) => b.z - a.z).slice(0, 8));
+}
+
+// ---------------------------------------------------------------- aligned occurrences: zoom, pan, bundles, bases
+function lowerBound(a, x) { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m][0] < x) lo = m + 1; else hi = m; } return lo; }
+function relOrient(s) {         // each family's orientation relative to the structure's lead family, by majority at shared loci
+  if (s._rel) return s._rel; const f0 = D.families[s.fams[0]], rel = { [f0.id]: 1 };
+  const lead = D.strains.map((_, si) => (f0.occ[si] || []).map(([p, st]) => [st > 0 ? p + f0.span / 2 : p - f0.span / 2, st]).sort((a, b) => a[0] - b[0]));
+  for (const i of s.fams.slice(1)) { const f = D.families[i]; let vote = 0;
+    D.strains.forEach((_, si) => { const L0 = lead[si]; if (!L0.length) return;
+      for (const [p, st] of (f.occ[si] || [])) { const c = st > 0 ? p + f.span / 2 : p - f.span / 2;
+        let lo = 0, hi = L0.length; while (lo < hi) { const m = (lo + hi) >> 1; if (L0[m][0] < c) lo = m + 1; else hi = m; }
+        for (const j of [lo - 1, lo]) if (j >= 0 && j < L0.length && Math.abs(L0[j][0] - c) <= 60) { vote += st * L0[j][1]; break; } } });
+    rel[f.id] = vote < 0 ? -1 : 1; }
+  return (s._rel = rel);
+}
+function alignItems() {     // [{kind: 'hdr', text} | {kind: 'row', si, f, lo, hi, st}]; one row per locus, oriented to the lead family
+  if (SEL === null || !byId[SEL]) return [];
+  const s = byId[SEL], fams = FAM === null ? s.fams : [FAM], rel = relOrient(s), items = [];
+  const strainsIdx = SCOPE === 'all' ? D.strains.map((_, i) => i) : [S];
+  const seen = new Set();
+  for (const i of fams) { const f = D.families[i], groups = new Map(), ro = FAM === null ? rel[i] : 1;
+    for (const si of strainsIdx) (f.occ[si] || []).forEach(([p, st, lv], k) => { if (lv < lvMin(f)) return;
+      const lo = st > 0 ? p : p - f.span + 1, key = si + ':' + Math.round((lo + f.span / 2) / 40); if (seen.has(key)) return;
+      seen.add(key); seen.add(si + ':' + (Math.round((lo + f.span / 2) / 40) - 1)); seen.add(si + ':' + (Math.round((lo + f.span / 2) / 40) + 1));
+      const b = SCOPE === 'all' && f.bundle && f.bundle[si] ? f.bundle[si][k] : -1;
+      if (!groups.has(b)) groups.set(b, []); groups.get(b).push({ kind: 'row', si, f: i, lo, hi: lo + f.span, st: st * ro }); });
+    const keys = [...groups.keys()].sort((a, b) => (a < 0) - (b < 0) || a - b);
+    for (const b of keys) { const rows = groups.get(b).sort((x, y) => x.si - y.si || x.lo - y.lo);
+      if (SCOPE === 'all') { const bm = b >= 0 && f.bundles ? f.bundles[b] : null;
+        items.push({ kind: 'hdr', text: bm ? `${f.name} · bundle ${b + 1} · ${bm.strains}/${D.strains.length} strains · ${bm.rule}: ${bm.label}` : `${f.name} · not bundled` }); }
+      items.push(...rows); } }
+  return items;
+}
+let alItems = [], alGeo = null, alY = [];
+const TOPPAD = 22, LABW = 150, MAXROWS = 2500;
+function drawAlign() {
+  if (!D) return;
+  const c = $('al'), g = c.getContext('2d'), dpr = window.devicePixelRatio || 1;
+  alItems = alignItems().slice(0, MAXROWS);
+  const nRows = alItems.filter(x => x.kind === 'row').length, WIN = AZ.win, HDR = Math.max(18, ROWH);
+  $('alNote').textContent = SEL === null ? 'Select a structure to align its occurrences.' :
+    `${nRows} occurrence${nRows === 1 ? '' : 's'}${alItems.length === MAXROWS ? ' (truncated)' : ''}, centred on the motif and oriented so it reads left to right; genes above the line run with the motif.${SCOPE === 'all' ? ' Rows are bundled across strains by shared flanking genes, then surrounding pattern structure, then surrounding sequence.' : ''} Wheel zooms around the pointer, drag pans, Shift + wheel scrolls rows.${SERVER ? ' Bases appear from about 7 px per base.' : ''}`;
+  $('azRead').textContent = `±${WIN >= 1000 ? (WIN / 1000).toFixed(WIN % 1000 ? 1 : 0) + ' kb' : Math.round(WIN) + ' bp'}`;
+  alY = []; let yy = TOPPAD; for (const it of alItems) { alY.push(yy); yy += it.kind === 'hdr' ? HDR + 4 : ROWH; }
+  const W = c.parentElement.clientWidth, H = Math.max(40, yy + 4);
+  c.style.height = H + 'px'; c.width = W * dpr; c.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  if (!alItems.length) return;
+  const x0 = LABW, x1 = W - 8, scale = (x1 - x0) / (2 * WIN), X = d => x0 + (d - AZ.c0 + WIN) * scale;
+  alGeo = { X, scale, x0, x1 };
+  const sc = $('alignScroll'), v0 = sc.scrollTop - 60, v1 = sc.scrollTop + sc.clientHeight + 60;
+  g.font = `10px ${css('--mono')}`; g.textBaseline = 'middle'; g.fillStyle = css('--muted'); g.textAlign = 'center';
+  const step = niceStep(2 * WIN); for (let d = Math.ceil((AZ.c0 - WIN) / step) * step; d <= AZ.c0 + WIN; d += step) g.fillText((d > 0 ? '+' : '') + d, X(d), 8);
+  if (X(0) >= x0 && X(0) <= x1) { g.strokeStyle = css('--rule'); g.beginPath(); g.moveTo(X(0), 16); g.lineTo(X(0), H); g.stroke(); }
+  const showSeq = SERVER && scale >= 7, need = [], bh = Math.min(10, ROWH * 0.55), gh = Math.max(3, Math.min(8, ROWH * 0.28));
+  alItems.forEach((it, k) => { const top = alY[k]; if (top > v1 || top + 40 < v0) return;
+    if (it.kind === 'hdr') { g.fillStyle = css('--bg'); g.fillRect(0, top + 2, W, HDR); g.strokeStyle = css('--accent'); g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(0, top + 2); g.lineTo(W, top + 2); g.stroke(); g.fillStyle = css('--ink'); g.font = `600 11px ${css('--sans')}`; g.textAlign = 'left';
+      g.fillText(it.text, 6, top + 2 + HDR / 2); return; }
+    const r = it, y = top + ROWH / 2, st = D.strains[r.si], centre = (r.lo + r.hi) / 2, o = r.st, toD = p => (p - centre) * o;
+    g.save(); g.beginPath(); g.rect(x0, top, x1 - x0, ROWH); g.clip();
+    g.strokeStyle = css('--rule'); g.lineWidth = 1; g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke();
+    const fs = st.feat; let i = lowerBound(fs, centre - 3 * WIN - Math.abs(AZ.c0) - 30000);
+    for (; i < fs.length && fs[i][0] <= centre + 3 * WIN + Math.abs(AZ.c0); i++) { const [a, b, fst, t, lab] = fs[i];
+      let d0 = toD(a), d1 = toD(b); if (d0 > d1) [d0, d1] = [d1, d0]; if (d1 < AZ.c0 - WIN || d0 > AZ.c0 + WIN) continue;
+      const rel = fst * o, isGene = t === 'CDS', ybar = isGene ? (rel > 0 ? y - gh - 1 : y + 1) : y - gh / 2;
+      g.fillStyle = isGene ? css(rel > 0 ? '--cds2' : '--cds') : (['tRNA', 'rRNA', 'ncRNA', 'tmRNA'].includes(t) ? css('--rna') : css('--reg'));
+      const xa = X(d0), xb = X(d1), hd = Math.min(6, (xb - xa) / 2);       // arrow head in transcription direction (relative to motif)
+      g.beginPath(); if (rel > 0) { g.moveTo(xa, ybar); g.lineTo(xb - hd, ybar); g.lineTo(xb, ybar + gh / 2); g.lineTo(xb - hd, ybar + gh); g.lineTo(xa, ybar + gh); }
+      else { g.moveTo(xb, ybar); g.lineTo(xa + hd, ybar); g.lineTo(xa, ybar + gh / 2); g.lineTo(xa + hd, ybar + gh); g.lineTo(xb, ybar + gh); } g.closePath(); g.fill();
+      if (isGene && lab && xb - xa > 46 && ROWH >= 16) { g.fillStyle = css('--ink'); g.globalAlpha = .7; g.font = `9px ${css('--mono')}`; g.textAlign = 'left';
+        g.fillText(lab.slice(0, Math.floor((xb - xa) / 6)), Math.max(xa, x0) + 2, rel > 0 ? ybar - 5 : ybar + gh + 5); g.globalAlpha = 1; } }
+    const ix = D.idx[r.si]; let j = lowerBound(ix, centre - 3 * WIN - Math.abs(AZ.c0) - 200);
+    for (; j < ix.length && ix[j][0] <= centre + 3 * WIN + Math.abs(AZ.c0); j++) { const [a, b, mst, fid] = ix[j];
+      let d0 = toD(a), d1 = toD(b); if (d0 > d1) [d0, d1] = [d1, d0]; if (d1 < AZ.c0 - WIN || d0 > AZ.c0 + WIN) continue;
+      const self = fid === r.f && Math.abs(a - r.lo) < 2;
+      if (showSeq) { g.strokeStyle = self ? css('--sel') : D.famColor[fid]; g.lineWidth = self ? 2 : 1.4; g.strokeRect(X(d0), y - bh / 2 - 1, X(d1) - X(d0), bh + 2); }
+      else { g.fillStyle = self ? css('--sel') : D.famColor[fid]; g.globalAlpha = self ? 1 : 0.85; g.fillRect(X(d0), y - bh / 2, Math.max(1.5, X(d1) - X(d0)), bh); g.globalAlpha = 1; } }
+    if (showSeq) {
+      const a = Math.floor(centre + (o > 0 ? AZ.c0 - WIN : -(AZ.c0 + WIN))) - 1, b = Math.ceil(centre + (o > 0 ? AZ.c0 + WIN : -(AZ.c0 - WIN))) + 1;
+      const key = `A|${SPECIES}|${r.si}|${a}|${b}`, seq = seqCache.get(key);
+      if (seq === undefined) need.push([key, r.si, Math.max(0, a), b]);
+      else if (seq) { g.font = `600 ${Math.min(13, scale * 0.9, ROWH * 0.8)}px ${css('--mono')}`; g.textAlign = 'center';
+        const s2 = a < 0 ? 'N'.repeat(-a) + seq : seq;
+        for (let q = 0; q < s2.length; q++) { const p = a + q, ch = o > 0 ? s2[q] : RC[s2[q]] || 'N';
+          const xx = X(toD(p + 0.5)); if (xx < x0 - scale || xx > x1 + scale) continue;
+          g.fillStyle = css('--b' + ch) || css('--muted'); g.fillText(ch, xx, y); } } }
+    g.restore();
+    g.textAlign = 'left'; g.font = `10px ${css('--mono')}`; g.fillStyle = css('--muted');
+    g.fillText(`${(st.strain || st.acc).slice(0, 11).padEnd(11)} ${Math.round(centre).toString().padStart(8)}${o > 0 ? '+' : '−'}`, 2, y);
+  });
+  if (need.length) fetchSeqs(need.slice(0, 400), drawAlign);
+}
+function zoomAlignAt(px, factor) {
+  if (!alGeo) return; const d = AZ.c0 - AZ.win + (px - alGeo.x0) / alGeo.scale;
+  const nw = Math.min(Math.max(AZ.win / factor, 10), 20000); AZ.c0 = d - (d - AZ.c0) * nw / AZ.win; AZ.win = nw; drawAlign();
+}
+const alc = $('al');
+alc.addEventListener('wheel', ev => { if (ev.shiftKey || !alItems.length) return; ev.preventDefault();
+  const r = alc.getBoundingClientRect(); zoomAlignAt(Math.max(ev.clientX - r.left, LABW), Math.exp(-ev.deltaY * 0.0015)); }, { passive: false });
+$('azIn').onclick = () => zoomAlignAt((alGeo ? (alGeo.x0 + alGeo.x1) / 2 : 400), 1.6);
+$('azOut').onclick = () => zoomAlignAt((alGeo ? (alGeo.x0 + alGeo.x1) / 2 : 400), 1 / 1.6);
+$('azReset').onclick = () => { AZ.win = +$('win').value; AZ.c0 = 0; drawAlign(); };
+$('alignScroll').addEventListener('scroll', () => drawAlign());
+let adrag = null;
+alc.addEventListener('pointerdown', ev => { adrag = { x: ev.clientX, c0: AZ.c0 }; alc.setPointerCapture(ev.pointerId); alc.classList.add('drag'); });
+alc.addEventListener('pointerup', () => { adrag = null; alc.classList.remove('drag'); });
+alc.addEventListener('pointermove', ev => {
+  if (adrag && alGeo) { AZ.c0 = adrag.c0 - (ev.clientX - adrag.x) / alGeo.scale; drawAlign(); return; }
+  const tip = $('tip2'); if (!alGeo || !alItems.length) return; const c = alc.getBoundingClientRect(), w = $('alignWrap').getBoundingClientRect();
+  const yy = ev.clientY - c.top, x = ev.clientX - c.left; let k = lowerBound(alY.map(v => [v]), yy + 1) - 1;
+  if (k < 0 || k >= alItems.length || alItems[k].kind !== 'row' || x < LABW) { tip.hidden = true; return; }
+  const r = alItems[k], st = D.strains[r.si], centre = (r.lo + r.hi) / 2, d = AZ.c0 - AZ.win + (x - alGeo.x0) / alGeo.scale, p = Math.round(centre + d * r.st);
+  const hitF = st.feat.filter(f => f[0] <= p && f[1] >= p).map(f => `${f[3]} ${f[4]}${f[5] ? ' · ' + f[5] : ''}`);
+  const hitM = D.idx[r.si].filter(m => m[0] <= p && m[1] >= p).map(m => label(D.families[m[3]]));
+  tip.textContent = `${st.strain || st.acc} ${p.toLocaleString()} (${d >= 0 ? '+' : ''}${Math.round(d)})` + (hitF.length ? ' · ' + hitF[0] : '') + (hitM.length ? ' · ' + hitM.join(', ') : '');
+  tip.hidden = false; tip.style.left = Math.min(ev.clientX - w.left + 12, w.width - 280) + 'px'; tip.style.top = (ev.clientY - w.top + 14) + 'px'; });
+alc.addEventListener('pointerleave', () => { $('tip2').hidden = true; });
+
+// ---------------------------------------------------------------- report
+function context(st, lo, hi, o) {
+  const cds = st.feat.filter(f => f[3] === 'CDS'), inside = cds.find(f => f[0] <= lo && f[1] >= hi);
+  if (inside) return { cls: 'inside gene', gene: inside, rel: inside[2] * o > 0 ? 'same strand' : 'opposite strand', dl: null, dr: null };
+  let left = null, right = null;
+  for (const f of cds) { if (f[1] <= lo && (!left || f[1] > left[1])) left = f; if (f[0] >= hi && (!right || f[0] < right[0])) right = f; }
+  const cls = left && right ? (left[2] < 0 && right[2] > 0 ? 'divergent ← →' : left[2] > 0 && right[2] < 0 ? 'convergent → ←' : 'co-directional ' + (left[2] > 0 ? '→ →' : '← ←')) : 'replicon end';
+  return { cls, left, right, dl: left ? lo - left[1] : null, dr: right ? right[0] - hi : null };
+}
+function geneTxt(f) { return f ? `${f[6] || ''}${f[4] && f[4] !== f[6] ? ' ' + f[4] : ''}${f[5] ? ' (' + f[5] + ')' : ''} [${f[2] > 0 ? '+' : '-'}]`.trim() : 'none'; }
+function report() {
+  const s = byId[SEL], fams = s.fams.map(i => D.families[i]), lines = [], P = (k, v) => lines.push(`${k}: ${v}`);
+  lines.push('# Tendency-map structure report');
+  P('species', ALL.species); P('panel', `${D.strains.length} strains: ` + D.strains.map(x => `${x.strain || '-'} (${x.acc})`).join('; '));
+  P('sequence_domain', MODE === 'nc' ? 'non-coding, non-gene (protein-coding CDS and RNA genes masked; patterns lie wholly outside them)' : 'whole genome');
+  P('annotation', D.annotation.join('/')); P('level', LEVEL + ' (broad = deepest exact composite keeping >= 90% of seed occurrences; strict = end of chain)');
+  P('filter', `families with E <= ${ETHR}`); P('structure_rank', `${s.rank + 1} of ${structs.length} by ${SORT} (families co-located at the same loci form one structure)`);
+  lines.push('', '## Families');
+  for (const f of fams) { const cons = LEVEL === 'broad' ? f.cons_broad : f.cons_strict, lo = LEVEL === 'broad' ? f.lo_broad : f.lo_strict, mb = f.mapback.broad;
+    lines.push(`- name: ${f.name}`, `  pair: core ${f.name.split('-')[0]}, ${f.gap} bp gap, core ${f.name.split('-')[2]}${f.inverted ? ' (inverted repeat: second core = reverse complement of the first)' : ''}`,
+      `  composite: "${cons}" (${f.length} bp, ${f.bits} bits; offset ${lo} from seed start; '.' = unconstrained)`,
+      `  degenerate_form: ${f.degenerate} (1-mismatch neighbourhood of both cores; z ${f.z_ball}; E ${fmtE(f.e_ball)})`,
+      `  spacing_peak: observed ${f.count} vs expected ${f.baseline}; z ${f.z}; E ${fmtE(f.e)} (gap-stratified, order-5 Markov twin panel)`,
+      `  occurrences: seed ${f.n_seed}; ${LEVEL} ${nOcc(f)}`,
+      `  whole_genome_hits (broad composite): total ${mb.total}; outside CDS ${mb.noncoding}; inside CDS ${mb.coding}`);
+    const mm = libMatches(f).slice(0, 5); if (mm.length) lines.push(`  nearest_known_motifs: ${mm.map(m => `${m.e.name} [${m.e.organism}; ${m.e.source}] z ${m.z.toFixed(1)} (similarity ${m.score.toFixed(2)})`).join('; ')}`);
+    if (f.bundles) lines.push(`  cross_strain_bundles: ${f.bundles.filter(b => b.strains >= 2).slice(0, 12).map(b => `${b.strains}/${D.strains.length} strains, ${b.n} rows, ${b.rule}: ${b.label}`).join(' | ')}`); }
+  const main = fams[0], lvl = lvMin(main);
+  lines.push('', `## Strain distribution and genomic spacing (family ${main.name}, ${LEVEL} level)`);
+  const allCtx = [], prods = {}; let near = 0;
+  D.strains.forEach((st, si) => {
+    const occ = (main.occ[si] || []).filter(o => o[2] >= lvl).map(([p, o]) => { const lo = o > 0 ? p : p - main.span + 1; return [lo, lo + main.span, o]; }).sort((a, b) => a[0] - b[0]);
+    const gaps = occ.slice(1).map((x, i) => x[0] - occ[i][0]).sort((a, b) => a - b), plus = occ.filter(x => x[2] > 0).length;
+    const nTrue = main.true_counts ? main.true_counts[LEVEL][si] : occ.length;
+    lines.push(`- ${st.strain || '-'} (${st.acc}): ${nTrue} occurrences (${(nTrue / (st.length / 1e6)).toFixed(1)} per Mb)${main.sampled > 1 ? ` (spacing from a 1-in-${main.sampled} sample)` : ''}; strands +${plus}/-${occ.length - plus}` + (gaps.length ? `; spacing min ${gaps[0]} bp, median ${gaps[gaps.length >> 1]} bp, within 1 kb of the next: ${gaps.filter(x => x < 1000).length}` : ''));
+    for (const [lo, hi, o] of occ) { const cx = context(st, lo, hi, o); allCtx.push(cx.cls);
+      for (const gg of [cx.gene, cx.left, cx.right]) if (gg && gg[5]) prods[gg[5]] = (prods[gg[5]] || 0) + 1;
+      if ((cx.dl !== null && cx.dl < 150) || (cx.dr !== null && cx.dr < 150)) near++; } });
+  const tally = {}; allCtx.forEach(c => tally[c] = (tally[c] || 0) + 1);
+  lines.push('', '## Genomic context (all strains)');
+  P('intergenic_class_counts', Object.entries(tally).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}: ${v}`).join('; '));
+  P('within_150bp_of_a_flanking_gene', `${near} of ${allCtx.length}`);
+  P('most_frequent_flanking_products', Object.entries(prods).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => `${k} (${v})`).join('; ') || 'n/a');
+  const co = {}, st0 = D.strains[S];
+  for (const [p, o] of (main.occ[S] || []).filter(x => x[2] >= lvl)) { const lo = o > 0 ? p : p - main.span + 1;
+    for (const m of D.idx[S]) if (Math.abs(m[0] - lo) < 300 && D.families[m[3]].struct !== s.id) { const nm = D.families[m[3]].name; co[nm] = (co[nm] || 0) + 1; } }
+  P(`co_occurring_families_within_300bp (${st0.strain || st0.acc})`, Object.entries(co).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${k} (${v})`).join('; ') || 'none');
+  lines.push('', `## Occurrences in ${st0.strain || st0.acc} (${st0.acc}); up to 80`, 'position\tstrand\tcontext\tleft_gene\tdist_left\tright_gene\tdist_right');
+  (main.occ[S] || []).filter(x => x[2] >= lvl).slice(0, 80).forEach(([p, o]) => { const lo = o > 0 ? p : p - main.span + 1, cx = context(st0, lo, lo + main.span, o);
+    lines.push(cx.gene ? `${lo}\t${o > 0 ? '+' : '-'}\t${cx.cls} (${cx.rel})\t${geneTxt(cx.gene)}\t0\t\t` :
+      `${lo}\t${o > 0 ? '+' : '-'}\t${cx.cls}\t${geneTxt(cx.left)}\t${cx.dl ?? ''}\t${geneTxt(cx.right)}\t${cx.dr ?? ''}`); });
+  lines.push('', 'Notes: positions are 0-based forward-strand coordinates in the strain\'s concatenated records. Composite offsets are relative to the first base of the seed pair on the motif\'s strand. Bits = information of the aligned occurrences relative to the domain\'s base composition, summed over the composite. Known-motif matches: information-weighted column similarity (0-1) over at least 5 informative aligned positions, reported as z against 12 column-shuffled versions of the motif; only z >= 3 is listed.');
+  return lines.join('\n');
+}
+$('copyBtn').onclick = () => { if (SEL === null) return; const txt = report();
+  const done = () => { $('copied').textContent = `Copied ${txt.length.toLocaleString()} characters`; };
+  const fallback = () => { const t = $('rep'); t.value = txt; t.select(); try { document.execCommand('copy'); done(); } catch (e) { $('copied').textContent = 'Copy blocked by the browser'; } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(fallback); else fallback(); };
+
+boot();
+new ResizeObserver(() => { draw(); renderFam(); drawAlign(); }).observe($('stage'));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { for (const k in cssCache) delete cssCache[k]; draw(); renderFam(); drawAlign(); });
+</script>
